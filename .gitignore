@@ -24,3 +24,5 @@ server/.env
 expo-env.d.ts
 # @end expo-cli.env
 server/.env
+.env
+server/.env
