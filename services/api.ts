@@ -114,10 +114,13 @@ export interface PredictionEntry {
   goalDifference: number;
 }
 
-function formScore(formStr: string): number {
+function formScore(formStr: string | null | undefined): number {
   if (!formStr) return 0;
   const scores: Record<string, number> = { W: 3, D: 1, L: 0 };
-  const last5 = formStr.replace(/,/g, '').slice(-5).split('');
+  // Strip everything that isn't W, D, or L (handles commas, spaces, etc.)
+  const cleaned = formStr.toUpperCase().replace(/[^WDL]/g, '');
+  if (cleaned.length === 0) return 0;
+  const last5 = cleaned.slice(-5).split('');
   const total = last5.reduce((sum, c) => sum + (scores[c] ?? 0), 0);
   return total / 15; // normalise 0-1
 }
@@ -127,7 +130,11 @@ export async function fetchPredictions(leagueId: number): Promise<{ leagueId: nu
   const table: any[] = data?.standings?.[0]?.table ?? [];
 
   const predictions: PredictionEntry[] = table.map((entry: any) => {
-    const score = formScore(entry.form ?? '');
+    let score = formScore(entry.form);
+    // Fallback: when form string is absent, estimate from season W/D/L ratio
+    if (score === 0 && entry.playedGames > 0) {
+      score = (entry.won * 3 + (entry.draw ?? 0)) / (entry.playedGames * 3);
+    }
     return {
       team: {
         id: entry.team?.id,

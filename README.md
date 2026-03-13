@@ -1,12 +1,143 @@
-# ⚽ SoccerIQ
+# SoccerIQ
 
-A premium dark-themed React Native + Expo app for football intelligence — live fixtures, standings, player stats, squad/transfer intel, and form-based predictions across all top 5 leagues.
+A premium dark-themed React Native + Expo app for football intelligence — live fixtures, standings, top scorers with FIFA Ultimate Team-style player cards, form-based predictions, and squad intel across the top 5 European leagues and UEFA Champions League.
 
-**Stack:** React Native · Expo (SDK 51) · Expo Router · Flask · football-data.org
+All data is fetched directly from [football-data.org](https://www.football-data.org) from the client — no backend required.
 
 ---
 
-## Design Language
+## Screenshots
+
+> _Add screenshots here_
+
+| Home | Players | Predictions | Squad Intel |
+|------|---------|-------------|-------------|
+| ![home](screenshots/home.png) | ![players](screenshots/players.png) | ![predictions](screenshots/predictions.png) | ![transfers](screenshots/transfers.png) |
+
+---
+
+## Features
+
+**Home**
+- Live fixtures with score, match status (LIVE / HT / FT), and team crests
+- League standings table with position, points, W/D/L, and goal difference
+- Upcoming fixtures for the selected league — next 5 scheduled matches with date pill (Today / Tomorrow / weekday) and kick-off time
+
+**Players**
+- Top 20 scorers per league, sorted by composite score `(goals × 2) + (assists × 1.5)`
+- Relative tier system: S (top 3) · A (4–10) · B (11–20) · C (rest) — so the best players always get S regardless of raw numbers
+- Tap any player to open a FIFA Ultimate Team-style card with tier-specific gradient (gold / purple / cyan / green), glow border, stats, club crest, and player photo fetched from Wikipedia
+
+**Predictions**
+- Teams ranked by recent form using last 5 match results (W=3, D=1, L=0) ÷ 15
+- Form confidence bar, Hot / Warm / Cold label, W/D/L season record
+- Falls back to season-wide points-per-game when form string is unavailable
+
+**Squad Intel**
+- Full squad rosters for each club in the selected league
+- Expandable team cards with player name, position, and nationality
+- Note: football-data.org free tier has no dedicated transfers endpoint; this tab uses squad data as intel
+
+---
+
+## Covered Leagues
+
+| League | ID | Country |
+|--------|----|---------|
+| Premier League | 2021 | England |
+| La Liga | 2014 | Spain |
+| Bundesliga | 2002 | Germany |
+| Serie A | 2019 | Italy |
+| Ligue 1 | 2015 | France |
+| UEFA Champions League | 2001 | Europe |
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | React Native + Expo SDK 54 |
+| Routing | Expo Router v6 (file-based) |
+| Language | TypeScript |
+| Data | football-data.org API v4 |
+| Player photos | Wikipedia REST API (`/api/rest_v1/page/summary/{name}`) |
+| UI | Linear gradients, BlurView, Ionicons |
+| Navigation | React Navigation bottom tabs |
+
+---
+
+## Setup
+
+### 1. Get a free API key
+
+Register at [football-data.org/client/register](https://www.football-data.org/client/register). The free tier covers all 6 supported competitions.
+
+### 2. Add your key to `.env`
+
+Create a `.env` file in the project root:
+
+```
+EXPO_PUBLIC_FOOTBALL_API_KEY=your_key_here
+```
+
+This is already in `.gitignore` — it will not be committed.
+
+### 3. Install dependencies
+
+```bash
+npm install
+```
+
+If you hit peer dependency conflicts:
+
+```bash
+npm install --legacy-peer-deps
+```
+
+### 4. Start the app
+
+```bash
+npx expo start --tunnel
+```
+
+Scan the QR code with [Expo Go](https://expo.dev/go) on iOS or Android, or press `i` / `a` to open in a simulator.
+
+---
+
+## Project Structure
+
+```
+SoccerIQ/
+├── app/
+│   ├── _layout.tsx           # Root layout (StatusBar, Stack)
+│   └── (tabs)/
+│       ├── _layout.tsx       # Bottom tab navigator (BlurView on iOS)
+│       ├── index.tsx         # Home — live fixtures, standings, upcoming
+│       ├── players.tsx       # Top scorers + FUT card modal
+│       ├── transfers.tsx     # Squad intel
+│       └── predictions.tsx   # Form-based predictions
+├── components/
+│   ├── Card.tsx              # Base card with optional gradient
+│   ├── LeagueSelector.tsx    # Horizontal pill league switcher
+│   ├── PlayerFUTModal.tsx    # FIFA Ultimate Team card modal
+│   ├── ScreenHeader.tsx      # Page title + subtitle
+│   ├── StatusBadge.tsx       # LIVE / FT / Hot / Cold badge
+│   ├── EmptyState.tsx        # Placeholder with icon
+│   └── LoadingSpinner.tsx    # Centered spinner
+├── constants/
+│   ├── theme.ts              # Colors, Typography, Spacing, Radius tokens
+│   └── leagues.ts            # League definitions (ID, flag, accent color)
+├── hooks/
+│   └── useApi.ts             # Generic data-fetching hook (loading/error/refetch)
+├── services/
+│   └── api.ts                # All fetch calls → football-data.org directly
+└── .env                      # EXPO_PUBLIC_FOOTBALL_API_KEY (never committed)
+```
+
+---
+
+## Design Tokens
 
 | Token | Value |
 |-------|-------|
@@ -16,131 +147,12 @@ A premium dark-themed React Native + Expo app for football intelligence — live
 | Accent Blue | `#00C2FF` |
 | Accent Purple | `#7B61FF` |
 
-Inspired by **Kalshi** and **Marvel Snap** — near-black base, electric accent glows, card-based layout with sharp typography and linear gradients.
-
----
-
-## Project Structure
-
-```
-SoccerIQ/
-├── app/
-│   ├── _layout.tsx          # Root layout (StatusBar, Stack)
-│   ├── index.tsx            # Redirect → (tabs)
-│   └── (tabs)/
-│       ├── _layout.tsx      # Bottom tab navigator
-│       ├── index.tsx        # Home — live fixtures + standings
-│       ├── players.tsx      # Top scorers per league
-│       ├── transfers.tsx    # Squad/transfer intel
-│       └── predictions.tsx  # Form-based predictions
-├── components/
-│   ├── Card.tsx             # Base card with optional gradient
-│   ├── LeagueSelector.tsx   # Horizontal pill league switcher
-│   ├── ScreenHeader.tsx     # Page title + subtitle
-│   ├── StatusBadge.tsx      # LIVE / FT / Hot / Cold badge
-│   ├── EmptyState.tsx       # Placeholder with icon
-│   └── LoadingSpinner.tsx   # Centered spinner
-├── constants/
-│   ├── theme.ts             # Colors, Typography, Spacing, Radius
-│   └── leagues.ts           # Top 5 league definitions
-├── hooks/
-│   └── useApi.ts            # Generic data-fetching hook
-├── services/
-│   └── api.ts               # All fetch calls → Flask backend
-├── server/
-│   ├── app.py               # Flask proxy server
-│   ├── requirements.txt
-│   ├── setup.sh
-│   └── .env                 # FOOTBALL_API_KEY (never committed)
-└── .env                     # EXPO_PUBLIC_API_URL
-```
-
----
-
-## Quick Start
-
-### 1. Get a free API key
-
-Register at [football-data.org](https://www.football-data.org/client/register) — the free tier covers all top 5 leagues.
-
-### 2. Start the Flask backend
-
-```bash
-cd server
-./setup.sh          # creates venv + installs deps
-
-# Edit .env
-echo "FOOTBALL_API_KEY=YOUR_KEY_HERE" > .env
-
-source venv/bin/activate
-python app.py       # runs on http://localhost:5000
-```
-
-Verify it's working:
-```bash
-curl http://localhost:5000/health
-# → {"status":"ok","service":"SoccerIQ API"}
-```
-
-### 3. Start the Expo app
-
-```bash
-# From project root
-npm install
-npx expo start
-```
-
-Open in Expo Go on your device or press `i`/`a` for simulator.
-
----
-
-## Covered Leagues
-
-| League | ID | Country |
-|--------|----|---------|
-| Premier League | 2021 | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 England |
-| La Liga | 2014 | 🇪🇸 Spain |
-| Bundesliga | 2002 | 🇩🇪 Germany |
-| Serie A | 2019 | 🇮🇹 Italy |
-| Ligue 1 | 2015 | 🇫🇷 France |
-
----
-
-## Flask API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /health` | Health check |
-| `GET /api/standings/:leagueId` | League table |
-| `GET /api/matches/live` | All in-play matches |
-| `GET /api/matches/today` | Today's fixtures |
-| `GET /api/matches/:leagueId` | League fixtures |
-| `GET /api/scorers/:leagueId` | Top scorers |
-| `GET /api/teams/:leagueId` | All teams + squads |
-| `GET /api/predictions/:leagueId` | Form-based predictions |
-
----
-
-## Environment Variables
-
-**`server/.env`** (never commit)
-```
-FOOTBALL_API_KEY=your_key_here
-FLASK_ENV=development
-FLASK_DEBUG=1
-```
-
-**`.env`** (root — safe to commit)
-```
-EXPO_PUBLIC_API_URL=http://localhost:5000
-```
-
-For a deployed backend, update `EXPO_PUBLIC_API_URL` to your server URL.
+Inspired by Kalshi and Marvel Snap — near-black base, electric accent glows, card layout with sharp typography and linear gradients.
 
 ---
 
 ## Notes
 
-- The **Transfers** tab shows squad rosters as intel since football-data.org's free tier has no dedicated transfers endpoint. Upgrade to a paid tier and swap `fetchLeagueTeams` for a transfers call.
-- The **Predictions** engine runs server-side in Flask — it aggregates form strings from standings and returns scored entries ranked by recent form.
+- The API key is bundled client-side via `EXPO_PUBLIC_*` — acceptable for personal / dev builds. For a public release, route calls through a server proxy to keep the key private.
 - Pull-to-refresh works on all screens.
+- The `server/` folder contains a legacy Flask proxy that is no longer used by the app. It can be safely deleted.

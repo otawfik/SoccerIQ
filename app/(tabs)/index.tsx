@@ -19,7 +19,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { LoadingSpinner } from '../../components/LoadingSpinner';
 import { EmptyState } from '../../components/EmptyState';
 import { useApi } from '../../hooks/useApi';
-import { fetchLiveMatches, fetchStandings } from '../../services/api';
+import { fetchLiveMatches, fetchStandings, fetchLeagueMatches } from '../../services/api';
 import { LEAGUES, League } from '../../constants/leagues';
 import { Colors, Typography, Spacing, Radius } from '../../constants/theme';
 
@@ -213,6 +213,76 @@ function StandingRow({
   );
 }
 
+function UpcomingFixtureCard({ match }: { match: Match }) {
+  const date = new Date(match.utcDate);
+
+  // Day label: "Today", "Tomorrow", or "Mon 17 Mar"
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const isTomorrow = date.toDateString() === tomorrow.toDateString();
+
+  const dayLabel = isToday
+    ? 'Today'
+    : isTomorrow
+    ? 'Tomorrow'
+    : date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+
+  const timeLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <Card style={styles.upcomingCard}>
+      {/* Date / time row */}
+      <View style={styles.upcomingHeader}>
+        <View style={styles.upcomingDatePill}>
+          <Text style={styles.upcomingDayText}>{dayLabel}</Text>
+          <Text style={styles.upcomingTimeText}>{timeLabel}</Text>
+        </View>
+        <View style={styles.upcomingRound}>
+          <Ionicons name="calendar-outline" size={12} color={Colors.textMuted} />
+          <Text style={styles.upcomingRoundText}>
+            {match.competition?.name ?? ''}
+          </Text>
+        </View>
+      </View>
+
+      {/* Teams row */}
+      <View style={styles.upcomingTeams}>
+        {/* Home */}
+        <View style={styles.upcomingTeamCol}>
+          {match.homeTeam.crest ? (
+            <Image source={{ uri: match.homeTeam.crest }} style={styles.upcomingCrest} resizeMode="contain" />
+          ) : (
+            <View style={[styles.upcomingCrest, styles.crestPlaceholder]} />
+          )}
+          <Text style={styles.upcomingTeamName} numberOfLines={2}>
+            {match.homeTeam.shortName ?? match.homeTeam.name}
+          </Text>
+        </View>
+
+        {/* VS divider */}
+        <View style={styles.upcomingVsCol}>
+          <Text style={styles.upcomingVs}>VS</Text>
+          <View style={styles.upcomingVsLine} />
+        </View>
+
+        {/* Away */}
+        <View style={styles.upcomingTeamCol}>
+          {match.awayTeam.crest ? (
+            <Image source={{ uri: match.awayTeam.crest }} style={styles.upcomingCrest} resizeMode="contain" />
+          ) : (
+            <View style={[styles.upcomingCrest, styles.crestPlaceholder]} />
+          )}
+          <Text style={styles.upcomingTeamName} numberOfLines={2}>
+            {match.awayTeam.shortName ?? match.awayTeam.name}
+          </Text>
+        </View>
+      </View>
+    </Card>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main Screen
 // ---------------------------------------------------------------------------
@@ -233,11 +303,20 @@ export default function HomeScreen() {
     refetch: refetchStandings,
   } = useApi(() => fetchStandings(selectedLeague.id), [selectedLeague.id]);
 
+  const {
+    data: upcomingData,
+    loading: upcomingLoading,
+    refetch: refetchUpcoming,
+  } = useApi(
+    () => fetchLeagueMatches(selectedLeague.id, { status: 'SCHEDULED,TIMED' }),
+    [selectedLeague.id]
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchLive(), refetchStandings()]);
+    await Promise.all([refetchLive(), refetchStandings(), refetchUpcoming()]);
     setRefreshing(false);
-  }, [refetchLive, refetchStandings]);
+  }, [refetchLive, refetchStandings, refetchUpcoming]);
 
   const liveMatches: Match[] =
     (liveData as any)?.matches?.filter(
@@ -246,6 +325,12 @@ export default function HomeScreen() {
 
   const standingTable: StandingEntry[] =
     (standingsData as any)?.standings?.[0]?.table ?? [];
+
+  // First 5 upcoming fixtures sorted by date ascending
+  const upcomingMatches: Match[] = ((upcomingData as any)?.matches ?? [] as Match[])
+    .slice()
+    .sort((a: Match, b: Match) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())
+    .slice(0, 5);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -330,6 +415,22 @@ export default function HomeScreen() {
               ))
             )}
           </Card>
+        </View>
+
+        {/* Upcoming Fixtures */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Upcoming Fixtures</Text>
+          {upcomingLoading ? (
+            <LoadingSpinner label="Loading fixtures..." />
+          ) : upcomingMatches.length === 0 ? (
+            <EmptyState
+              icon="📅"
+              title="No upcoming fixtures"
+              subtitle="Check back closer to the next matchday."
+            />
+          ) : (
+            upcomingMatches.map((m) => <UpcomingFixtureCard key={m.id} match={m} />)
+          )}
         </View>
 
         {/* Bottom padding for tab bar */}
@@ -545,5 +646,84 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+
+  // Upcoming fixture card
+  upcomingCard: {
+    marginBottom: Spacing.sm,
+    gap: Spacing.md,
+  },
+  upcomingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  upcomingDatePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: Colors.accentBlue + '18',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.accentBlue + '35',
+  },
+  upcomingDayText: {
+    fontSize: Typography.xs,
+    fontWeight: Typography.bold,
+    color: Colors.accentBlue,
+    letterSpacing: 0.3,
+  },
+  upcomingTimeText: {
+    fontSize: Typography.xs,
+    color: Colors.accentBlue + 'CC',
+    fontWeight: Typography.medium,
+  },
+  upcomingRound: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  upcomingRoundText: {
+    fontSize: Typography.xs,
+    color: Colors.textMuted,
+    letterSpacing: 0.2,
+  },
+  upcomingTeams: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  upcomingTeamCol: {
+    flex: 1,
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  upcomingCrest: {
+    width: 44,
+    height: 44,
+  },
+  upcomingTeamName: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.semibold,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  upcomingVsCol: {
+    width: 48,
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  upcomingVs: {
+    fontSize: Typography.xs,
+    fontWeight: Typography.black,
+    color: Colors.textMuted,
+    letterSpacing: 2,
+  },
+  upcomingVsLine: {
+    width: 1,
+    height: 20,
+    backgroundColor: Colors.border,
   },
 });

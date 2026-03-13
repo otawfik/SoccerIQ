@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -77,7 +77,7 @@ const TIER_CONFIG: Record<Tier, TierConfig> = {
 };
 
 // ---------------------------------------------------------------------------
-// Nationality → flag emoji helper (common nations)
+// Nationality → flag emoji helper
 // ---------------------------------------------------------------------------
 
 const NATIONALITY_FLAGS: Record<string, string> = {
@@ -99,22 +99,89 @@ function nationalityFlag(nat: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Silhouette — rendered purely in RN (no image dependency)
+// Dimensions
+// ---------------------------------------------------------------------------
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const CARD_W = Math.min(SCREEN_W * 0.72, 300);
+const CARD_H = CARD_W * 1.42;
+const PHOTO_H = CARD_H * 0.52; // top half
+
+// ---------------------------------------------------------------------------
+// Wikipedia photo fetch
+//
+// Uses the Wikipedia REST summary endpoint — ID-independent, works for any
+// player with a Wikipedia article. Returns thumbnail.source (JPEG/PNG).
+// Falls back to silhouette if the article has no thumbnail or the fetch fails.
+// ---------------------------------------------------------------------------
+
+async function fetchWikipediaPhoto(playerName: string): Promise<string | null> {
+  try {
+    // Wikipedia page titles use underscores and are case-sensitive on the first letter
+    const title = encodeURIComponent(playerName.replace(/ /g, '_'));
+    const res = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${title}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data?.thumbnail?.source as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Silhouette fallback
 // ---------------------------------------------------------------------------
 
 function PlayerSilhouette({ glowColor }: { glowColor: string }) {
   return (
     <View style={styles.silhouetteWrap}>
-      {/* Glow halo */}
       <View style={[styles.silhouetteHalo, { backgroundColor: glowColor + '18' }]} />
-      {/* Head */}
       <View style={[styles.silhouetteHead, { borderColor: glowColor + '60', backgroundColor: glowColor + '20' }]} />
-      {/* Body */}
       <View style={[styles.silhouetteBody, { borderColor: glowColor + '50', backgroundColor: glowColor + '15' }]}>
-        {/* Jersey number area */}
         <View style={[styles.jerseyStripe, { backgroundColor: glowColor + '25' }]} />
       </View>
     </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PlayerPhoto — fetches from Wikipedia, falls back to silhouette
+// ---------------------------------------------------------------------------
+
+function PlayerPhoto({
+  playerName,
+  glowColor,
+}: {
+  playerName: string;
+  glowColor: string;
+}) {
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [useFallback, setUseFallback] = useState(false);
+
+  useEffect(() => {
+    // Reset when player changes
+    setPhotoUrl(null);
+    setUseFallback(false);
+    fetchWikipediaPhoto(playerName).then((url) => {
+      if (url) setPhotoUrl(url);
+      else setUseFallback(true);
+    });
+  }, [playerName]);
+
+  if (useFallback || photoUrl === null) {
+    return <PlayerSilhouette glowColor={glowColor} />;
+  }
+
+  return (
+    <Image
+      source={{ uri: photoUrl }}
+      style={styles.playerPhoto}
+      resizeMode="cover"
+      onError={() => setUseFallback(true)}
+    />
   );
 }
 
@@ -165,7 +232,7 @@ function FUTCard({
         end={{ x: 1, y: 1 }}
         style={styles.futCard}
       >
-        {/* Subtle diagonal sheen */}
+        {/* Full-card diagonal sheen */}
         <LinearGradient
           colors={[config.glowColor + '12', 'transparent', config.glowColor + '08']}
           start={{ x: 0, y: 0 }}
@@ -174,62 +241,85 @@ function FUTCard({
           pointerEvents="none"
         />
 
-        {/* Top row: tier badge + rating (goals) */}
-        <View style={styles.futTopRow}>
-          <View style={[styles.tierBadge, { backgroundColor: config.badgeBg }]}>
-            <Text style={[styles.tierBadgeText, { color: config.textColor }]}>
-              {config.label}
-            </Text>
-          </View>
-          <View style={styles.goalsCircle}>
-            <Text style={[styles.goalsCircleNum, { color: config.glowColor }]}>{goals}</Text>
-            <Text style={[styles.goalsCircleLabel, { color: config.glowColor + 'AA' }]}>GLS</Text>
-          </View>
-        </View>
+        {/* ── PHOTO SECTION (top half) ── */}
+        <View style={styles.photoSection}>
+          {/* Player photo or silhouette */}
+          <PlayerPhoto
+            playerName={name}
+            glowColor={config.glowColor}
+          />
 
-        {/* Silhouette */}
-        <PlayerSilhouette glowColor={config.glowColor} />
+          {/* Gradient fade: photo → card background */}
+          <LinearGradient
+            colors={['transparent', 'transparent', config.gradientColors[2]]}
+            locations={[0, 0.55, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={styles.photoFade}
+            pointerEvents="none"
+          />
 
-        {/* Club crest + flag row */}
-        <View style={styles.futIdentityRow}>
-          {teamCrest ? (
-            <Image source={{ uri: teamCrest }} style={styles.futCrest} resizeMode="contain" />
-          ) : (
-            <View style={[styles.futCrest, { backgroundColor: config.glowColor + '20', borderRadius: 4 }]} />
-          )}
-          <Text style={styles.futFlag}>{flag}</Text>
-        </View>
-
-        {/* Player name */}
-        <Text style={[styles.futName, { color: config.glowColor }]} numberOfLines={1} adjustsFontSizeToFit>
-          {name.split(' ').slice(-1)[0].toUpperCase()}
-        </Text>
-        <Text style={[styles.futFullName, { color: config.glowColor + 'BB' }]} numberOfLines={1}>
-          {name}
-        </Text>
-
-        {/* Divider */}
-        <View style={[styles.futDivider, { backgroundColor: config.glowColor + '30' }]} />
-
-        {/* Stats row */}
-        <View style={styles.futStatsRow}>
-          {[
-            { val: goals, label: 'GOL' },
-            { val: assists ?? 0, label: 'ASS' },
-            { val: penalties ?? 0, label: 'PEN' },
-            { val: goalsPerMatch, label: 'G/M' },
-          ].map(({ val, label }) => (
-            <View key={label} style={styles.futStatCell}>
-              <Text style={[styles.futStatVal, { color: config.glowColor }]}>{val}</Text>
-              <Text style={[styles.futStatLabel, { color: config.glowColor + '80' }]}>{label}</Text>
+          {/* Tier badge + goals overlaid on top of photo */}
+          <View style={styles.photoTopOverlay}>
+            <View style={[styles.tierBadge, { backgroundColor: config.badgeBg }]}>
+              <Text style={[styles.tierBadgeText, { color: config.textColor }]}>
+                {config.label}
+              </Text>
             </View>
-          ))}
+            <View style={styles.goalsCircle}>
+              <Text style={[styles.goalsCircleNum, { color: config.glowColor }]}>{goals}</Text>
+              <Text style={[styles.goalsCircleLabel, { color: config.glowColor + 'AA' }]}>GLS</Text>
+            </View>
+          </View>
         </View>
 
-        {/* Bottom club name */}
-        <Text style={[styles.futClubName, { color: config.glowColor + '60' }]} numberOfLines={1}>
-          {teamName.toUpperCase()}
-        </Text>
+        {/* ── INFO SECTION (bottom half) ── */}
+        <View style={styles.infoSection}>
+          {/* Club crest + nationality flag */}
+          <View style={styles.futIdentityRow}>
+            {teamCrest ? (
+              <Image source={{ uri: teamCrest }} style={styles.futCrest} resizeMode="contain" />
+            ) : (
+              <View style={[styles.futCrest, { backgroundColor: config.glowColor + '20', borderRadius: 4 }]} />
+            )}
+            <Text style={styles.futFlag}>{flag}</Text>
+          </View>
+
+          {/* Surname large, full name small */}
+          <Text
+            style={[styles.futName, { color: config.glowColor }]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+          >
+            {name.split(' ').slice(-1)[0].toUpperCase()}
+          </Text>
+          <Text style={[styles.futFullName, { color: config.glowColor + 'BB' }]} numberOfLines={1}>
+            {name}
+          </Text>
+
+          {/* Divider */}
+          <View style={[styles.futDivider, { backgroundColor: config.glowColor + '30' }]} />
+
+          {/* Stats */}
+          <View style={styles.futStatsRow}>
+            {[
+              { val: goals, label: 'GOL' },
+              { val: assists ?? 0, label: 'ASS' },
+              { val: penalties ?? 0, label: 'PEN' },
+              { val: goalsPerMatch, label: 'G/M' },
+            ].map(({ val, label }) => (
+              <View key={label} style={styles.futStatCell}>
+                <Text style={[styles.futStatVal, { color: config.glowColor }]}>{val}</Text>
+                <Text style={[styles.futStatLabel, { color: config.glowColor + '80' }]}>{label}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Club name watermark */}
+          <Text style={[styles.futClubName, { color: config.glowColor + '60' }]} numberOfLines={1}>
+            {teamName.toUpperCase()}
+          </Text>
+        </View>
       </LinearGradient>
     </View>
   );
@@ -303,7 +393,7 @@ export function PlayerFUTModal({ visible, onClose, tier, scorer }: PlayerFUTModa
         )}
       </TouchableOpacity>
 
-      {/* Card */}
+      {/* Card + labels */}
       <Animated.View
         style={[
           styles.cardContainer,
@@ -323,7 +413,7 @@ export function PlayerFUTModal({ visible, onClose, tier, scorer }: PlayerFUTModa
           tier={tier}
         />
 
-        {/* Tier label below card */}
+        {/* Tier label */}
         <View style={styles.tierLabelRow}>
           <View style={[styles.tierPill, { borderColor: config.glowColor + '50', backgroundColor: config.glowColor + '15' }]}>
             <Text style={[styles.tierPillText, { color: config.glowColor }]}>
@@ -332,7 +422,7 @@ export function PlayerFUTModal({ visible, onClose, tier, scorer }: PlayerFUTModa
           </View>
         </View>
 
-        {/* Close button */}
+        {/* Close */}
         <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.8}>
           <Ionicons name="close" size={20} color={Colors.textSecondary} />
         </TouchableOpacity>
@@ -345,10 +435,6 @@ export function PlayerFUTModal({ visible, onClose, tier, scorer }: PlayerFUTModa
 // Styles
 // ---------------------------------------------------------------------------
 
-const { width: SCREEN_W } = Dimensions.get('window');
-const CARD_W = Math.min(SCREEN_W * 0.72, 300);
-const CARD_H = CARD_W * 1.42; // FUT portrait ratio
-
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -359,16 +445,13 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: 0, left: 0, right: 0, bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.base,
   },
 
-  // FUT card outer (glow border)
+  // ── Card outer shell (glow border) ──
   futCardOuter: {
     width: CARD_W,
     height: CARD_H,
@@ -382,20 +465,93 @@ const styles = StyleSheet.create({
   },
   futCard: {
     flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.base,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
-    gap: Spacing.xs,
   },
 
-  // Top row
-  futTopRow: {
+  // ── Photo section ──
+  photoSection: {
+    width: CARD_W,
+    height: PHOTO_H,
+    overflow: 'hidden',
+  },
+  playerPhoto: {
     width: '100%',
+    height: '100%',
+  },
+  // Silhouette fills same space when photo fails
+  silhouetteWrap: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  silhouetteHalo: {
+    position: 'absolute',
+    width: CARD_W * 0.65,
+    height: CARD_W * 0.65,
+    borderRadius: CARD_W * 0.325,
+    bottom: 0,
+    alignSelf: 'center',
+  },
+  silhouetteHead: {
+    position: 'absolute',
+    width: CARD_W * 0.2,
+    height: CARD_W * 0.2,
+    borderRadius: CARD_W * 0.1,
+    borderWidth: 1.5,
+    top: PHOTO_H * 0.05,
+    alignSelf: 'center',
+  },
+  silhouetteBody: {
+    position: 'absolute',
+    width: CARD_W * 0.38,
+    height: CARD_W * 0.24,
+    borderRadius: Radius.md,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    borderWidth: 1.5,
+    bottom: 0,
+    overflow: 'hidden',
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
+  jerseyStripe: {
+    width: '60%',
+    height: 4,
+    borderRadius: 2,
+    marginTop: 8,
+  },
+  // Gradient at bottom of photo that fades into card background
+  photoFade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: PHOTO_H * 0.5,
+  },
+  // Tier badge + goals float on top of the photo
+  photoTopOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.md,
   },
+
+  // ── Info section ──
+  infoSection: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.xs,
+    justifyContent: 'center',
+  },
+
+  // Tier badge
   tierBadge: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 3,
@@ -406,6 +562,8 @@ const styles = StyleSheet.create({
     fontWeight: Typography.black,
     letterSpacing: 1,
   },
+
+  // Goals
   goalsCircle: {
     alignItems: 'center',
   },
@@ -420,61 +578,18 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
 
-  // Silhouette
-  silhouetteWrap: {
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    height: CARD_H * 0.3,
-    position: 'relative',
-    width: '100%',
-  },
-  silhouetteHalo: {
-    position: 'absolute',
-    width: CARD_W * 0.65,
-    height: CARD_W * 0.65,
-    borderRadius: CARD_W * 0.325,
-    bottom: 0,
-  },
-  silhouetteHead: {
-    position: 'absolute',
-    width: CARD_W * 0.2,
-    height: CARD_W * 0.2,
-    borderRadius: CARD_W * 0.1,
-    borderWidth: 1.5,
-    top: 0,
-  },
-  silhouetteBody: {
-    position: 'absolute',
-    width: CARD_W * 0.38,
-    height: CARD_W * 0.22,
-    borderRadius: Radius.md,
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
-    borderWidth: 1.5,
-    bottom: 0,
-    overflow: 'hidden',
-    alignItems: 'center',
-  },
-  jerseyStripe: {
-    width: '60%',
-    height: 4,
-    borderRadius: 2,
-    marginTop: 8,
-  },
-
   // Identity row
   futIdentityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
-    marginTop: Spacing.xs,
   },
   futCrest: {
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 28,
   },
   futFlag: {
-    fontSize: 22,
+    fontSize: 20,
   },
 
   // Name
@@ -483,7 +598,6 @@ const styles = StyleSheet.create({
     fontWeight: Typography.black,
     letterSpacing: Typography.tight,
     textAlign: 'center',
-    marginTop: 2,
   },
   futFullName: {
     fontSize: Typography.xs,
@@ -497,7 +611,7 @@ const styles = StyleSheet.create({
   futDivider: {
     width: '80%',
     height: 1,
-    marginVertical: Spacing.xs,
+    marginVertical: 2,
   },
 
   // Stats
@@ -522,16 +636,15 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
 
-  // Club name
+  // Club name watermark
   futClubName: {
     fontSize: 8,
     fontWeight: Typography.bold,
     letterSpacing: 2,
     textAlign: 'center',
-    marginTop: Spacing.xs,
   },
 
-  // Tier label + close
+  // Below-card UI
   tierLabelRow: {
     alignItems: 'center',
   },
