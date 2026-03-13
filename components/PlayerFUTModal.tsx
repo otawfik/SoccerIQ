@@ -1,0 +1,559 @@
+import React, { useEffect, useRef } from 'react';
+import {
+  Modal,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Animated,
+  Dimensions,
+  Platform,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, Typography, Spacing, Radius } from '../constants/theme';
+
+// ---------------------------------------------------------------------------
+// Tier config
+// ---------------------------------------------------------------------------
+
+export type Tier = 'S' | 'A' | 'B' | 'C';
+
+/**
+ * Tier is relative to a player's rank within their league (composite-scored).
+ * rank 1-3 → S, 4-10 → A, 11-20 → B, 21+ → C
+ */
+export function getTier(rank: number): Tier {
+  if (rank <= 3) return 'S';
+  if (rank <= 10) return 'A';
+  if (rank <= 20) return 'B';
+  return 'C';
+}
+
+interface TierConfig {
+  label: string;
+  gradientColors: [string, string, string];
+  glowColor: string;
+  badgeBg: string;
+  borderColor: string;
+  textColor: string;
+}
+
+const TIER_CONFIG: Record<Tier, TierConfig> = {
+  S: {
+    label: 'S',
+    gradientColors: ['#2A1F00', '#6B4C00', '#3D2D00'],
+    glowColor: '#FFD700',
+    badgeBg: '#FFD700',
+    borderColor: '#FFD700',
+    textColor: '#1A1200',
+  },
+  A: {
+    label: 'A',
+    gradientColors: ['#1A0A2E', '#4A1A7A', '#2D0D4A'],
+    glowColor: '#B44FFF',
+    badgeBg: '#7B61FF',
+    borderColor: '#9B61FF',
+    textColor: '#FFFFFF',
+  },
+  B: {
+    label: 'B',
+    gradientColors: ['#001A2E', '#004A7A', '#001E3D'],
+    glowColor: '#00C2FF',
+    badgeBg: '#00C2FF',
+    borderColor: '#00C2FF',
+    textColor: '#001A2E',
+  },
+  C: {
+    label: 'C',
+    gradientColors: ['#001A0D', '#004A22', '#001E10'],
+    glowColor: '#00FF87',
+    badgeBg: '#00FF87',
+    borderColor: '#00FF87',
+    textColor: '#001A0D',
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Nationality → flag emoji helper (common nations)
+// ---------------------------------------------------------------------------
+
+const NATIONALITY_FLAGS: Record<string, string> = {
+  Argentina: '🇦🇷', Brazil: '🇧🇷', France: '🇫🇷', Germany: '🇩🇪',
+  Spain: '🇪🇸', Portugal: '🇵🇹', England: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', Italy: '🇮🇹',
+  Netherlands: '🇳🇱', Belgium: '🇧🇪', Uruguay: '🇺🇾', Croatia: '🇭🇷',
+  Poland: '🇵🇱', Denmark: '🇩🇰', Norway: '🇳🇴', Sweden: '🇸🇪',
+  Switzerland: '🇨🇭', Austria: '🇦🇹', 'Czech Republic': '🇨🇿',
+  Serbia: '🇷🇸', Morocco: '🇲🇦', Senegal: '🇸🇳', Nigeria: '🇳🇬',
+  'South Korea': '🇰🇷', Japan: '🇯🇵', Mexico: '🇲🇽', Colombia: '🇨🇴',
+  Chile: '🇨🇱', Ecuador: '🇪🇨', 'Ivory Coast': '🇨🇮', Ghana: '🇬🇭',
+  Egypt: '🇪🇬', Algeria: '🇩🇿', Turkey: '🇹🇷', Greece: '🇬🇷',
+  Scotland: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', Wales: '🏴󠁧󠁢󠁷󠁬󠁳󠁿', Slovakia: '🇸🇰',
+  Hungary: '🇭🇺', Romania: '🇷🇴', Ukraine: '🇺🇦',
+};
+
+function nationalityFlag(nat: string): string {
+  return NATIONALITY_FLAGS[nat] ?? '🌍';
+}
+
+// ---------------------------------------------------------------------------
+// Silhouette — rendered purely in RN (no image dependency)
+// ---------------------------------------------------------------------------
+
+function PlayerSilhouette({ glowColor }: { glowColor: string }) {
+  return (
+    <View style={styles.silhouetteWrap}>
+      {/* Glow halo */}
+      <View style={[styles.silhouetteHalo, { backgroundColor: glowColor + '18' }]} />
+      {/* Head */}
+      <View style={[styles.silhouetteHead, { borderColor: glowColor + '60', backgroundColor: glowColor + '20' }]} />
+      {/* Body */}
+      <View style={[styles.silhouetteBody, { borderColor: glowColor + '50', backgroundColor: glowColor + '15' }]}>
+        {/* Jersey number area */}
+        <View style={[styles.jerseyStripe, { backgroundColor: glowColor + '25' }]} />
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FUT Card
+// ---------------------------------------------------------------------------
+
+interface FUTCardProps {
+  name: string;
+  nationality: string;
+  teamName: string;
+  teamCrest?: string;
+  goals: number;
+  assists: number | null;
+  penalties: number | null;
+  playedMatches: number;
+  tier: Tier;
+}
+
+function FUTCard({
+  name,
+  nationality,
+  teamName,
+  teamCrest,
+  goals,
+  assists,
+  penalties,
+  playedMatches,
+  tier,
+}: FUTCardProps) {
+  const config = TIER_CONFIG[tier];
+  const flag = nationalityFlag(nationality);
+  const goalsPerMatch = playedMatches > 0 ? (goals / playedMatches).toFixed(2) : '0.00';
+
+  return (
+    <View
+      style={[
+        styles.futCardOuter,
+        {
+          shadowColor: config.glowColor,
+          borderColor: config.borderColor + '80',
+        },
+      ]}
+    >
+      <LinearGradient
+        colors={config.gradientColors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.futCard}
+      >
+        {/* Subtle diagonal sheen */}
+        <LinearGradient
+          colors={[config.glowColor + '12', 'transparent', config.glowColor + '08']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+
+        {/* Top row: tier badge + rating (goals) */}
+        <View style={styles.futTopRow}>
+          <View style={[styles.tierBadge, { backgroundColor: config.badgeBg }]}>
+            <Text style={[styles.tierBadgeText, { color: config.textColor }]}>
+              {config.label}
+            </Text>
+          </View>
+          <View style={styles.goalsCircle}>
+            <Text style={[styles.goalsCircleNum, { color: config.glowColor }]}>{goals}</Text>
+            <Text style={[styles.goalsCircleLabel, { color: config.glowColor + 'AA' }]}>GLS</Text>
+          </View>
+        </View>
+
+        {/* Silhouette */}
+        <PlayerSilhouette glowColor={config.glowColor} />
+
+        {/* Club crest + flag row */}
+        <View style={styles.futIdentityRow}>
+          {teamCrest ? (
+            <Image source={{ uri: teamCrest }} style={styles.futCrest} resizeMode="contain" />
+          ) : (
+            <View style={[styles.futCrest, { backgroundColor: config.glowColor + '20', borderRadius: 4 }]} />
+          )}
+          <Text style={styles.futFlag}>{flag}</Text>
+        </View>
+
+        {/* Player name */}
+        <Text style={[styles.futName, { color: config.glowColor }]} numberOfLines={1} adjustsFontSizeToFit>
+          {name.split(' ').slice(-1)[0].toUpperCase()}
+        </Text>
+        <Text style={[styles.futFullName, { color: config.glowColor + 'BB' }]} numberOfLines={1}>
+          {name}
+        </Text>
+
+        {/* Divider */}
+        <View style={[styles.futDivider, { backgroundColor: config.glowColor + '30' }]} />
+
+        {/* Stats row */}
+        <View style={styles.futStatsRow}>
+          {[
+            { val: goals, label: 'GOL' },
+            { val: assists ?? 0, label: 'ASS' },
+            { val: penalties ?? 0, label: 'PEN' },
+            { val: goalsPerMatch, label: 'G/M' },
+          ].map(({ val, label }) => (
+            <View key={label} style={styles.futStatCell}>
+              <Text style={[styles.futStatVal, { color: config.glowColor }]}>{val}</Text>
+              <Text style={[styles.futStatLabel, { color: config.glowColor + '80' }]}>{label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Bottom club name */}
+        <Text style={[styles.futClubName, { color: config.glowColor + '60' }]} numberOfLines={1}>
+          {teamName.toUpperCase()}
+        </Text>
+      </LinearGradient>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Modal wrapper
+// ---------------------------------------------------------------------------
+
+export interface PlayerFUTModalProps {
+  visible: boolean;
+  onClose: () => void;
+  tier: Tier;
+  scorer: {
+    player: { id: number; name: string; nationality: string; dateOfBirth?: string };
+    team: { id: number; name: string; crest?: string };
+    goals: number;
+    assists: number | null;
+    penalties: number | null;
+    playedMatches: number;
+  } | null;
+}
+
+export function PlayerFUTModal({ visible, onClose, tier, scorer }: PlayerFUTModalProps) {
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 80,
+          friction: 8,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      scaleAnim.setValue(0.8);
+      opacityAnim.setValue(0);
+    }
+  }, [visible]);
+
+  if (!scorer) return null;
+
+  const config = TIER_CONFIG[tier];
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      {/* Backdrop */}
+      <TouchableOpacity
+        style={styles.backdrop}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        {Platform.OS === 'ios' ? (
+          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, styles.androidBackdrop]} />
+        )}
+      </TouchableOpacity>
+
+      {/* Card */}
+      <Animated.View
+        style={[
+          styles.cardContainer,
+          { transform: [{ scale: scaleAnim }], opacity: opacityAnim },
+        ]}
+        pointerEvents="box-none"
+      >
+        <FUTCard
+          name={scorer.player.name}
+          nationality={scorer.player.nationality}
+          teamName={scorer.team.name}
+          teamCrest={scorer.team.crest}
+          goals={scorer.goals}
+          assists={scorer.assists}
+          penalties={scorer.penalties}
+          playedMatches={scorer.playedMatches}
+          tier={tier}
+        />
+
+        {/* Tier label below card */}
+        <View style={styles.tierLabelRow}>
+          <View style={[styles.tierPill, { borderColor: config.glowColor + '50', backgroundColor: config.glowColor + '15' }]}>
+            <Text style={[styles.tierPillText, { color: config.glowColor }]}>
+              {tier === 'S' ? '⭐ S-Tier · Elite' : tier === 'A' ? '🔥 A-Tier · Excellent' : tier === 'B' ? '💧 B-Tier · Strong' : '🌱 C-Tier · Rising'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Close button */}
+        <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.8}>
+          <Ionicons name="close" size={20} color={Colors.textSecondary} />
+        </TouchableOpacity>
+      </Animated.View>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+const { width: SCREEN_W } = Dimensions.get('window');
+const CARD_W = Math.min(SCREEN_W * 0.72, 300);
+const CARD_H = CARD_W * 1.42; // FUT portrait ratio
+
+const styles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+  },
+  androidBackdrop: {
+    backgroundColor: 'rgba(0,0,0,0.85)',
+  },
+  cardContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.base,
+  },
+
+  // FUT card outer (glow border)
+  futCardOuter: {
+    width: CARD_W,
+    height: CARD_H,
+    borderRadius: Radius.xl,
+    borderWidth: 1.5,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 28,
+    elevation: 24,
+    overflow: 'hidden',
+  },
+  futCard: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: Spacing.base,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
+
+  // Top row
+  futTopRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  tierBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+    borderRadius: Radius.sm,
+  },
+  tierBadgeText: {
+    fontSize: Typography.md,
+    fontWeight: Typography.black,
+    letterSpacing: 1,
+  },
+  goalsCircle: {
+    alignItems: 'center',
+  },
+  goalsCircleNum: {
+    fontSize: Typography.xxl,
+    fontWeight: Typography.black,
+    lineHeight: 32,
+  },
+  goalsCircleLabel: {
+    fontSize: 8,
+    fontWeight: Typography.bold,
+    letterSpacing: 1.5,
+  },
+
+  // Silhouette
+  silhouetteWrap: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    height: CARD_H * 0.3,
+    position: 'relative',
+    width: '100%',
+  },
+  silhouetteHalo: {
+    position: 'absolute',
+    width: CARD_W * 0.65,
+    height: CARD_W * 0.65,
+    borderRadius: CARD_W * 0.325,
+    bottom: 0,
+  },
+  silhouetteHead: {
+    position: 'absolute',
+    width: CARD_W * 0.2,
+    height: CARD_W * 0.2,
+    borderRadius: CARD_W * 0.1,
+    borderWidth: 1.5,
+    top: 0,
+  },
+  silhouetteBody: {
+    position: 'absolute',
+    width: CARD_W * 0.38,
+    height: CARD_W * 0.22,
+    borderRadius: Radius.md,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    borderWidth: 1.5,
+    bottom: 0,
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  jerseyStripe: {
+    width: '60%',
+    height: 4,
+    borderRadius: 2,
+    marginTop: 8,
+  },
+
+  // Identity row
+  futIdentityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  futCrest: {
+    width: 32,
+    height: 32,
+  },
+  futFlag: {
+    fontSize: 22,
+  },
+
+  // Name
+  futName: {
+    fontSize: Typography.xxl,
+    fontWeight: Typography.black,
+    letterSpacing: Typography.tight,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  futFullName: {
+    fontSize: Typography.xs,
+    fontWeight: Typography.medium,
+    letterSpacing: Typography.wider,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+
+  // Divider
+  futDivider: {
+    width: '80%',
+    height: 1,
+    marginVertical: Spacing.xs,
+  },
+
+  // Stats
+  futStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    paddingHorizontal: Spacing.xs,
+  },
+  futStatCell: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  futStatVal: {
+    fontSize: Typography.md,
+    fontWeight: Typography.black,
+  },
+  futStatLabel: {
+    fontSize: 8,
+    fontWeight: Typography.bold,
+    letterSpacing: 1,
+    marginTop: 1,
+  },
+
+  // Club name
+  futClubName: {
+    fontSize: 8,
+    fontWeight: Typography.bold,
+    letterSpacing: 2,
+    textAlign: 'center',
+    marginTop: Spacing.xs,
+  },
+
+  // Tier label + close
+  tierLabelRow: {
+    alignItems: 'center',
+  },
+  tierPill: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+  },
+  tierPillText: {
+    fontSize: Typography.sm,
+    fontWeight: Typography.bold,
+    letterSpacing: 0.5,
+  },
+  closeBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.bgElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
