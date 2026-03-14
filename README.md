@@ -12,7 +12,7 @@ All data is fetched directly from [football-data.org](https://www.football-data.
 
 | Home | Players | Predictions | Squad Intel |
 |------|---------|-------------|-------------|
-| ![home](screenshots/home.png) | ![players](screenshots/players.png) | ![predictions](screenshots/predictions.png) | ![transfers](screenshots/transfers.png) |
+| ![home](assets/screenshots/home.png) | ![players](assets/screenshots/players.png) | ![predictions](assets/screenshots/predictions.png) | ![transfers](assets/screenshots/transfers.png) |
 
 ---
 
